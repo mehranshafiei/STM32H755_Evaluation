@@ -364,10 +364,12 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+	for(;;)
+	{
+		const char* data = "1234";
+		HAL_UART_Transmit(&huart4, (uint8_t*)data, strlen(data), 100);
+		osDelay(1);
+	}
   /* USER CODE END 5 */
 }
 
