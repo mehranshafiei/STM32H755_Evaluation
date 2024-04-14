@@ -77,6 +77,11 @@ const osThreadAttr_t defaultTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for myQueue01 */
+osMessageQueueId_t myQueue01Handle;
+const osMessageQueueAttr_t myQueue01_attributes = {
+  .name = "myQueue01"
+};
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -154,6 +159,10 @@ int main(void)
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
+
+  /* Create the queue(s) */
+  /* creation of myQueue01 */
+  myQueue01Handle = osMessageQueueNew (16, sizeof(uint16_t), &myQueue01_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -350,7 +359,15 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if (huart == &huart4)
+	{
+		static uint8_t msg = 5U;
+		auto numOfmessages = osMessageQueueGetCount(myQueue01Handle);
+		osStatus_t status = osMessageQueuePut(myQueue01Handle, (void*)&msg, 0, 0);
+	}
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -364,11 +381,13 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
+	const char* data = "1234";
+
 	for(;;)
 	{
-		const char* data = "1234";
-		HAL_UART_Transmit(&huart4, (uint8_t*)data, strlen(data), 100);
-		osDelay(1);
+		HAL_UART_Transmit_IT(&huart4, (uint8_t*)data, strlen(data));
+		uint8_t msg;
+		osStatus_t status = osMessageQueueGet(myQueue01Handle, &msg, NULL, osWaitForever);
 	}
   /* USER CODE END 5 */
 }
