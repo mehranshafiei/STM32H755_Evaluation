@@ -47,6 +47,8 @@
 /* Private variables ---------------------------------------------------------*/
 
 SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef hdma_spi1_rx;
+DMA_HandleTypeDef hdma_spi1_tx;
 
 UART_HandleTypeDef huart3;
 
@@ -59,6 +61,11 @@ const osThreadAttr_t defaultTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for spiHandlerMsgQueue */
+osMessageQueueId_t spiHandlerMsgQueueHandle;
+const osMessageQueueAttr_t spiHandlerMsgQueue_attributes = {
+  .name = "spiHandlerMsgQueue"
+};
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -66,8 +73,9 @@ const osThreadAttr_t defaultTask_attributes = {
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART3_UART_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
+static void MX_USART3_UART_Init(void);
 static void MX_SPI1_Init(void);
 void StartDefaultTask(void *argument);
 
@@ -144,8 +152,9 @@ Error_Handler();
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART3_UART_Init();
+  MX_DMA_Init();
   MX_USB_OTG_FS_PCD_Init();
+  MX_USART3_UART_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 
@@ -165,6 +174,10 @@ Error_Handler();
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
+
+  /* Create the queue(s) */
+  /* creation of spiHandlerMsgQueue */
+  spiHandlerMsgQueueHandle = osMessageQueueNew (16, sizeof(uint16_t), &spiHandlerMsgQueue_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -279,7 +292,7 @@ static void MX_SPI1_Init(void)
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.DataSize = SPI_DATASIZE_16BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
@@ -393,6 +406,25 @@ static void MX_USB_OTG_FS_PCD_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -413,7 +445,17 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+static uint16_t spi_tx_buffer[4] = { 0x1, 0x2, 0x3, 0x4};
+static uint16_t spi_rx_buffer[4];
 
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+	if (hspi == &hspi1) {
+		static uint8_t msg = 5U;
+		auto numOfmessages = osMessageQueueGetCount(spiHandlerMsgQueueHandle);
+		osStatus_t status = osMessageQueuePut(spiHandlerMsgQueueHandle, (void*)&msg, 0, 0);
+	}
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -429,8 +471,14 @@ void StartDefaultTask(void *argument)
 	/* Infinite loop */
 	for(;;)
 	{
-		uint16_t data = 0xaaaa;
-		HAL_SPI_Transmit(&hspi1, (uint8_t*)(&data), sizeof(data), 1000);
+		auto result = HAL_SPI_TransmitReceive_DMA(&hspi1,
+												  (uint8_t*)(spi_tx_buffer),
+				                                  (uint8_t*)(spi_rx_buffer), sizeof(spi_tx_buffer));
+
+		uint8_t msg;
+		osStatus_t status = osMessageQueueGet(spiHandlerMsgQueueHandle, &msg, NULL, osWaitForever);
+//		uint16_t data = 0xaaaa;
+//		HAL_SPI_Transmit(&hspi1, (uint8_t*)(&data), sizeof(data), 1000);
 		osDelay(1);
 	}
   /* USER CODE END 5 */
